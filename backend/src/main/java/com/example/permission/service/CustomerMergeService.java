@@ -17,7 +17,7 @@ import static com.example.permission.entity.table.CustomerNoteTableDef.CUSTOMER_
 import static com.example.permission.entity.table.CustomerOperationLogTableDef.CUSTOMER_OPERATION_LOG;
 import static com.example.permission.entity.table.CustomerPreferenceTableDef.CUSTOMER_PREFERENCE;
 import static com.example.permission.entity.table.CustomerTableDef.CUSTOMER;
-import static com.example.permission.entity.table.CustomerTagRelTableDef.CUSTOMER_TAG_REL;
+import static com.example.permission.entity.table.CustomerTagRelationTableDef.CUSTOMER_TAG_RELATION;
 
 @Service
 public class CustomerMergeService {
@@ -200,12 +200,12 @@ public class CustomerMergeService {
 
         QueryWrapper sourceTagQuery = QueryWrapper.create()
                 .from(CustomerTagRelation.class)
-                .where(CUSTOMER_TAG_REL.CUSTOMER_ID.eq(sourceId));
+                .where(CUSTOMER_TAG_RELATION.CUSTOMER_ID.eq(sourceId));
         List<CustomerTagRelation> sourceTags = customerTagRelationMapper.selectListByQuery(sourceTagQuery);
 
         QueryWrapper targetTagQuery = QueryWrapper.create()
                 .from(CustomerTagRelation.class)
-                .where(CUSTOMER_TAG_REL.CUSTOMER_ID.eq(targetId));
+                .where(CUSTOMER_TAG_RELATION.CUSTOMER_ID.eq(targetId));
         List<CustomerTagRelation> targetTags = customerTagRelationMapper.selectListByQuery(targetTagQuery);
 
         Set<Long> targetTagIds = new HashSet<>();

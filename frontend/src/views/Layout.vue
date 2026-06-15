@@ -121,6 +121,31 @@
             <el-icon><Plus /></el-icon>
             <span>新增客户</span>
           </el-menu-item>
+
+          <el-menu-item index="/customer/tags" v-if="hasPermission('customer:tag:list')">
+            <el-icon><PriceTag /></el-icon>
+            <span>标签管理</span>
+          </el-menu-item>
+
+          <el-menu-item index="/customer/blacklist" v-if="hasPermission('customer:blacklist:list')">
+            <el-icon><Warning /></el-icon>
+            <span>黑名单管理</span>
+          </el-menu-item>
+
+          <el-menu-item index="/customer/blacklistApproval" v-if="hasPermission('customer:blacklist:approve')">
+            <el-icon><Checked /></el-icon>
+            <span>黑名单审批</span>
+          </el-menu-item>
+
+          <el-menu-item index="/customer/merge" v-if="hasPermission('customer:merge')">
+            <el-icon><CopyDocument /></el-icon>
+            <span>客户合并</span>
+          </el-menu-item>
+
+          <el-menu-item index="/customer/import" v-if="hasPermission('customer:import')">
+            <el-icon><Upload /></el-icon>
+            <span>批量导入</span>
+          </el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>
@@ -187,7 +212,7 @@ import {
   Expand, Fold, ArrowDown, SwitchButton,
   House, OfficeBuilding, School, Tickets, Key, DataAnalysis,
   Tools, Document, Edit, Clock, DataLine,
-  UserFilled, Plus
+  UserFilled, Plus, PriceTag, Warning, Checked, CopyDocument, Upload
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
@@ -226,7 +251,12 @@ const hasMaintenancePermission = computed(() => {
 
 const hasCustomerPermission = computed(() => {
   return hasPermission('customer:list') ||
-         hasPermission('customer:add')
+         hasPermission('customer:add') ||
+         hasPermission('customer:tag:list') ||
+         hasPermission('customer:blacklist:list') ||
+         hasPermission('customer:blacklist:approve') ||
+         hasPermission('customer:merge') ||
+         hasPermission('customer:import')
 })
 
 const toggleCollapse = () => {
