@@ -331,6 +331,7 @@ const api = {
     unpinNote: (id) => request.put(`/customer/note/${id}/unpin`),
 
     getBlacklistPage: (params) => request.get('/customer/blacklist/page', { params }),
+    getBlacklistById: (id) => request.get(`/customer/blacklist/${id}`),
     getBlacklistPending: () => request.get('/customer/blacklist/pending'),
     getBlacklistPendingRemove: () => request.get('/customer/blacklist/pending-remove'),
     checkBlacklist: (customerId) => request.get(`/customer/blacklist/check/${customerId}`),

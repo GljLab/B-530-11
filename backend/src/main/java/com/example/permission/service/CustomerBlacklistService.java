@@ -35,6 +35,15 @@ public class CustomerBlacklistService {
 
     @Transactional
     public CustomerBlacklist submit(CustomerBlacklist bl, Long applicantId, String applicantName) {
+        QueryWrapper existingQuery = QueryWrapper.create()
+                .from(CustomerBlacklist.class)
+                .where(CUSTOMER_BLACKLIST.CUSTOMER_ID.eq(bl.getCustomerId()))
+                .and(CUSTOMER_BLACKLIST.STATUS.in(1, 2, 5));
+        Long existingCount = customerBlacklistMapper.selectCountByQuery(existingQuery);
+        if (existingCount != null && existingCount > 0) {
+            throw new com.example.permission.common.BusinessException("该客户已在黑名单中或有正在处理的申请，请勿重复提交");
+        }
+
         bl.setStatus(1);
         bl.setApplicantId(applicantId);
         bl.setApplicantName(applicantName);
@@ -177,7 +186,11 @@ public class CustomerBlacklistService {
                 .from(CustomerBlacklist.class)
                 .where(CUSTOMER_BLACKLIST.STATUS.eq(1))
                 .orderBy(CUSTOMER_BLACKLIST.APPLY_TIME.desc());
-        return customerBlacklistMapper.selectListByQuery(query);
+        List<CustomerBlacklist> list = customerBlacklistMapper.selectListByQuery(query);
+        for (CustomerBlacklist bl : list) {
+            fillCustomerInfo(bl);
+        }
+        return list;
     }
 
     public List<CustomerBlacklist> listPendingRemove() {
@@ -185,7 +198,19 @@ public class CustomerBlacklistService {
                 .from(CustomerBlacklist.class)
                 .where(CUSTOMER_BLACKLIST.STATUS.eq(5))
                 .orderBy(CUSTOMER_BLACKLIST.REMOVE_APPLY_TIME.desc());
-        return customerBlacklistMapper.selectListByQuery(query);
+        List<CustomerBlacklist> list = customerBlacklistMapper.selectListByQuery(query);
+        for (CustomerBlacklist bl : list) {
+            fillCustomerInfo(bl);
+        }
+        return list;
+    }
+
+    public CustomerBlacklist getById(Long id) {
+        CustomerBlacklist bl = customerBlacklistMapper.selectOneById(id);
+        if (bl != null) {
+            fillCustomerInfo(bl);
+        }
+        return bl;
     }
 
     @Transactional

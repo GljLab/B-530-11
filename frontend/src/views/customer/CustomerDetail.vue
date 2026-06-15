@@ -210,11 +210,26 @@
             <div class="info-section">
               <h4 class="section-title">房间偏好</h4>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="偏好房型">{{ preference?.preferredRoomType || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="偏好房型">
+                  <div class="preference-tag-list">
+                    <el-tag v-for="rt in preferredRoomTypeList" :key="rt" size="small" class="pref-tag">{{ rt }}</el-tag>
+                    <span v-if="!preferredRoomTypeList.length" class="empty-text">-</span>
+                  </div>
+                </el-descriptions-item>
                 <el-descriptions-item label="楼层偏好">{{ floorLabel(preference?.preferredFloor) }}</el-descriptions-item>
-                <el-descriptions-item label="朝向偏好">{{ preference?.preferredOrientation || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="朝向偏好">
+                  <div class="preference-tag-list">
+                    <el-tag v-for="o in preferredOrientationList" :key="o" size="small" class="pref-tag">{{ o }}</el-tag>
+                    <span v-if="!preferredOrientationList.length" class="empty-text">-</span>
+                  </div>
+                </el-descriptions-item>
                 <el-descriptions-item label="床型偏好">{{ bedTypeLabel(preference?.preferredBedType) }}</el-descriptions-item>
-                <el-descriptions-item label="景观偏好">{{ preference?.preferredView || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="景观偏好">
+                  <div class="preference-tag-list">
+                    <el-tag v-for="v in preferredViewList" :key="v" size="small" class="pref-tag">{{ v }}</el-tag>
+                    <span v-if="!preferredViewList.length" class="empty-text">-</span>
+                  </div>
+                </el-descriptions-item>
               </el-descriptions>
             </div>
 
@@ -340,6 +355,24 @@
                   </div>
                 </div>
                 <div class="note-content">{{ note.content }}</div>
+                <div v-if="getNoteAttachments(note).length" class="note-attachments">
+                  <div
+                    v-for="(att, idx) in getNoteAttachments(note)"
+                    :key="idx"
+                    class="attachment-item"
+                  >
+                    <el-icon class="att-icon"><Paperclip /></el-icon>
+                    <span class="att-name">{{ att.name || att.fileName || '附件' + (idx + 1) }}</span>
+                    <el-button
+                      type="primary"
+                      link
+                      size="small"
+                      @click="viewAttachment(att)"
+                    >
+                      查看
+                    </el-button>
+                  </div>
+                </div>
               </el-card>
             </el-timeline-item>
           </el-timeline>
@@ -431,7 +464,20 @@
       <el-form ref="preferenceFormRef" :model="preferenceForm" label-width="100px">
         <h4 class="section-title">房间偏好</h4>
         <el-form-item label="偏好房型">
-          <el-input v-model="preferenceForm.preferredRoomType" placeholder="如：豪华大床房" />
+          <el-select
+            v-model="preferenceForm.preferredRoomTypeList"
+            multiple
+            filterable
+            placeholder="请选择偏好房型"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="rt in roomTypeOptions"
+              :key="rt.id"
+              :label="rt.typeName"
+              :value="rt.typeName"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="楼层偏好">
           <el-select v-model="preferenceForm.preferredFloor" placeholder="请选择" clearable>
@@ -441,7 +487,19 @@
           </el-select>
         </el-form-item>
         <el-form-item label="朝向偏好">
-          <el-input v-model="preferenceForm.preferredOrientation" placeholder="如：南向" />
+          <el-select
+            v-model="preferenceForm.preferredOrientationList"
+            multiple
+            placeholder="请选择朝向偏好"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="o in orientationOptions"
+              :key="o.value"
+              :label="o.label"
+              :value="o.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="床型偏好">
           <el-select v-model="preferenceForm.preferredBedType" placeholder="请选择" clearable>
@@ -451,7 +509,19 @@
           </el-select>
         </el-form-item>
         <el-form-item label="景观偏好">
-          <el-input v-model="preferenceForm.preferredView" placeholder="如：海景" />
+          <el-select
+            v-model="preferenceForm.preferredViewList"
+            multiple
+            placeholder="请选择景观偏好"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="v in viewOptions"
+              :key="v.value"
+              :label="v.label"
+              :value="v.value"
+            />
+          </el-select>
         </el-form-item>
 
         <h4 class="section-title">特殊需求</h4>
@@ -523,8 +593,14 @@
         <el-form-item label="附件">
           <el-upload
             v-model:file-list="noteForm.attachments"
-            :auto-upload="false"
+            :action="uploadUrl"
+            :headers="uploadHeaders"
+            :auto-upload="true"
             :limit="3"
+            :on-success="handleNoteUploadSuccess"
+            :on-error="handleNoteUploadError"
+            :on-remove="handleNoteRemoveFile"
+            name="file"
           >
             <el-button size="small">选择文件</el-button>
           </el-upload>
@@ -628,7 +704,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, User, Edit, Delete, Lock, Unlock, GoldMedal, Warning, Download, Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, User, Edit, Delete, Lock, Unlock, GoldMedal, Warning, Download, Plus, Paperclip } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/api'
 
@@ -725,6 +801,26 @@ const specialNeedsOptions = [
   { value: 'low_floor', label: '需要低楼层' }
 ]
 
+const orientationOptions = [
+  { value: '东向', label: '东向' },
+  { value: '南向', label: '南向' },
+  { value: '西向', label: '西向' },
+  { value: '北向', label: '北向' },
+  { value: '东南向', label: '东南向' },
+  { value: '西南向', label: '西南向' },
+  { value: '东北向', label: '东北向' },
+  { value: '西北向', label: '西北向' }
+]
+
+const viewOptions = [
+  { value: '海景', label: '海景' },
+  { value: '山景', label: '山景' },
+  { value: '城景', label: '城景' },
+  { value: '园景', label: '园景' },
+  { value: '湖景', label: '湖景' },
+  { value: '街景', label: '街景' }
+]
+
 const servicePreferenceOptions = [
   { value: 'do_not_disturb', label: '免打扰' },
   { value: 'early_newspaper', label: '要早报' },
@@ -744,6 +840,7 @@ const notes = ref([])
 const operationLogs = ref([])
 const blacklistInfo = ref(null)
 const pageLoading = ref(false)
+const roomTypeOptions = ref([])
 
 const freezeDialogVisible = ref(false)
 const freezeDialogType = ref('freeze')
@@ -762,11 +859,11 @@ const preferenceDialogVisible = ref(false)
 const preferenceSaving = ref(false)
 const preferenceFormRef = ref(null)
 const preferenceForm = reactive({
-  preferredRoomType: '',
+  preferredRoomTypeList: [],
   preferredFloor: '',
-  preferredOrientation: '',
+  preferredOrientationList: [],
   preferredBedType: '',
-  preferredView: '',
+  preferredViewList: [],
   specialNeedsList: [],
   servicePreferenceList: [],
   dietVegetarian: 0,
@@ -785,6 +882,7 @@ const noteForm = reactive({
   attachments: [],
   mentionRoles: ''
 })
+const noteUploadedUrls = ref([])
 const noteRules = {
   content: [{ required: true, message: '请输入备注内容', trigger: 'blur' }],
   importance: [{ required: true, message: '请选择重要程度', trigger: 'change' }]
@@ -822,6 +920,26 @@ const servicePreferenceSet = computed(() => {
   if (!preference.value?.servicePreference) return new Set()
   return new Set(preference.value.servicePreference.split(',').filter(Boolean))
 })
+
+const preferredRoomTypeList = computed(() => {
+  if (!preference.value?.preferredRoomType) return []
+  return preference.value.preferredRoomType.split(',').filter(Boolean)
+})
+
+const preferredOrientationList = computed(() => {
+  if (!preference.value?.preferredOrientation) return []
+  return preference.value.preferredOrientation.split(',').filter(Boolean)
+})
+
+const preferredViewList = computed(() => {
+  if (!preference.value?.preferredView) return []
+  return preference.value.preferredView.split(',').filter(Boolean)
+})
+
+const uploadUrl = '/api/file/upload'
+const uploadHeaders = computed(() => ({
+  Authorization: `Bearer ${localStorage.getItem('token') || ''}`
+}))
 
 const sortedNotes = computed(() => {
   return [...notes.value].sort((a, b) => {
@@ -879,6 +997,17 @@ const loadAllTags = async () => {
     }
   } catch {
     allTags.value = []
+  }
+}
+
+const loadRoomTypes = async () => {
+  try {
+    const res = await api.hotel.getRoomTypes()
+    if (res.code === 200) {
+      roomTypeOptions.value = res.data || []
+    }
+  } catch {
+    roomTypeOptions.value = []
   }
 }
 
@@ -1047,13 +1176,14 @@ const handleRemoveTag = async (tagId) => {
   } catch {}
 }
 
-const openPreferenceDialog = () => {
+const openPreferenceDialog = async () => {
+  await loadRoomTypes()
   const p = preference.value || {}
-  preferenceForm.preferredRoomType = p.preferredRoomType || ''
+  preferenceForm.preferredRoomTypeList = p.preferredRoomType ? p.preferredRoomType.split(',').filter(Boolean) : []
   preferenceForm.preferredFloor = p.preferredFloor || ''
-  preferenceForm.preferredOrientation = p.preferredOrientation || ''
+  preferenceForm.preferredOrientationList = p.preferredOrientation ? p.preferredOrientation.split(',').filter(Boolean) : []
   preferenceForm.preferredBedType = p.preferredBedType || ''
-  preferenceForm.preferredView = p.preferredView || ''
+  preferenceForm.preferredViewList = p.preferredView ? p.preferredView.split(',').filter(Boolean) : []
   preferenceForm.specialNeedsList = p.specialNeeds ? p.specialNeeds.split(',').filter(Boolean) : []
   preferenceForm.servicePreferenceList = p.servicePreference ? p.servicePreference.split(',').filter(Boolean) : []
   preferenceForm.dietVegetarian = p.dietVegetarian || 0
@@ -1069,11 +1199,11 @@ const handleSavePreference = async () => {
   try {
     const data = {
       customerId: Number(id),
-      preferredRoomType: preferenceForm.preferredRoomType,
+      preferredRoomType: preferenceForm.preferredRoomTypeList.join(','),
       preferredFloor: preferenceForm.preferredFloor,
-      preferredOrientation: preferenceForm.preferredOrientation,
+      preferredOrientation: preferenceForm.preferredOrientationList.join(','),
       preferredBedType: preferenceForm.preferredBedType,
-      preferredView: preferenceForm.preferredView,
+      preferredView: preferenceForm.preferredViewList.join(','),
       specialNeeds: preferenceForm.specialNeedsList.join(','),
       servicePreference: preferenceForm.servicePreferenceList.join(','),
       dietVegetarian: preferenceForm.dietVegetarian,
@@ -1102,7 +1232,50 @@ const openNoteDialog = () => {
   noteForm.importance = 1
   noteForm.attachments = []
   noteForm.mentionRoles = ''
+  noteUploadedUrls.value = []
   noteDialogVisible.value = true
+}
+
+const getNoteAttachments = (note) => {
+  if (!note || !note.attachments) return []
+  try {
+    const parsed = typeof note.attachments === 'string' 
+      ? JSON.parse(note.attachments) 
+      : note.attachments
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const viewAttachment = (att) => {
+  const url = att.url || att.fileUrl || att
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
+
+const handleNoteUploadSuccess = (response, uploadFile) => {
+  if (response.code === 200 && response.data) {
+    const url = typeof response.data === 'string' ? response.data : response.data.url
+    const name = uploadFile.name
+    noteUploadedUrls.value.push({ url, name })
+    uploadFile.url = url
+  } else {
+    ElMessage.error(response.message || '上传失败')
+  }
+}
+
+const handleNoteUploadError = () => {
+  ElMessage.error('附件上传失败，请重试')
+}
+
+const handleNoteRemoveFile = (uploadFile) => {
+  const url = uploadFile.url
+  if (url) {
+    const idx = noteUploadedUrls.value.findIndex(a => a.url === url)
+    if (idx > -1) noteUploadedUrls.value.splice(idx, 1)
+  }
 }
 
 const handleAddNote = async () => {
@@ -1115,6 +1288,7 @@ const handleAddNote = async () => {
       customerId: Number(id),
       content: noteForm.content,
       importance: noteForm.importance,
+      attachments: JSON.stringify(noteUploadedUrls.value),
       mentionRoles: noteForm.mentionRoles
     }
     const res = await api.customer.addNote(data)
@@ -1458,6 +1632,16 @@ onMounted(() => {
   gap: 0 16px;
 }
 
+.preference-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pref-tag {
+  margin: 0;
+}
+
 .notes-header {
   display: flex;
   justify-content: flex-end;
@@ -1496,6 +1680,33 @@ onMounted(() => {
   font-size: 14px;
   color: #4a5568;
   line-height: 1.8;
+}
+
+.note-attachments {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #ebeef5;
+}
+
+.attachment-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.att-icon {
+  color: #909399;
+  font-size: 16px;
+}
+
+.att-name {
+  flex: 1;
+  color: #606266;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .log-card {

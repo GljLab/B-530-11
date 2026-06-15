@@ -63,6 +63,13 @@ public class CustomerBlacklistController {
         return Result.success(result);
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('customer:blacklist:list')")
+    public Result<CustomerBlacklist> getById(@PathVariable Long id) {
+        CustomerBlacklist bl = customerBlacklistService.getById(id);
+        return Result.success(bl);
+    }
+
     @PostMapping("/submit")
     @PreAuthorize("hasAuthority('customer:blacklist:submit')")
     public Result<CustomerBlacklist> submit(@RequestBody CustomerBlacklist blacklist) {

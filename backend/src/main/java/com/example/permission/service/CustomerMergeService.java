@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 
 import static com.example.permission.entity.table.CustomerAddressTableDef.CUSTOMER_ADDRESS;
+import static com.example.permission.entity.table.CustomerBlacklistTableDef.CUSTOMER_BLACKLIST;
 import static com.example.permission.entity.table.CustomerNoteTableDef.CUSTOMER_NOTE;
 import static com.example.permission.entity.table.CustomerOperationLogTableDef.CUSTOMER_OPERATION_LOG;
 import static com.example.permission.entity.table.CustomerPreferenceTableDef.CUSTOMER_PREFERENCE;
@@ -179,8 +180,13 @@ public class CustomerMergeService {
         if (target == null || target.getDeleted() == 1) {
             throw new com.example.permission.common.BusinessException("目标客户不存在");
         }
+        if (sourceId.equals(targetId)) {
+            throw new com.example.permission.common.BusinessException("不能合并同一个客户");
+        }
 
         if (fieldSelection != null) {
+            boolean needClearSourceUnique = false;
+
             for (Map.Entry<String, Object> entry : fieldSelection.entrySet()) {
                 String fieldName = entry.getKey();
                 String choice = entry.getValue() != null ? entry.getValue().toString() : "target";
@@ -191,10 +197,21 @@ public class CustomerMergeService {
                     Object value = "source".equals(choice) ? field.get(source) : field.get(target);
                     if (value != null) {
                         field.set(target, value);
+                        if ("phone".equals(fieldName) || "idNumber".equals(fieldName) || "idType".equals(fieldName)) {
+                            needClearSourceUnique = true;
+                        }
                     }
                 } catch (NoSuchFieldException | IllegalAccessException e) {
                     continue;
                 }
+            }
+
+            if (needClearSourceUnique) {
+                source.setPhone(source.getPhone() + "_merged_" + sourceId);
+                if (source.getIdNumber() != null) {
+                    source.setIdNumber(source.getIdNumber() + "_merged_" + sourceId);
+                }
+                customerMapper.update(source);
             }
         }
 
@@ -230,8 +247,21 @@ public class CustomerMergeService {
 
         if (sourcePref != null) {
             if (targetPref == null) {
-                sourcePref.setCustomerId(targetId);
-                customerPreferenceMapper.update(sourcePref);
+                CustomerPreference newPref = new CustomerPreference();
+                newPref.setCustomerId(targetId);
+                newPref.setPreferredRoomType(sourcePref.getPreferredRoomType());
+                newPref.setPreferredFloor(sourcePref.getPreferredFloor());
+                newPref.setPreferredOrientation(sourcePref.getPreferredOrientation());
+                newPref.setPreferredBedType(sourcePref.getPreferredBedType());
+                newPref.setPreferredView(sourcePref.getPreferredView());
+                newPref.setSpecialNeeds(sourcePref.getSpecialNeeds());
+                newPref.setServicePreference(sourcePref.getServicePreference());
+                newPref.setDietVegetarian(sourcePref.getDietVegetarian());
+                newPref.setDietHalal(sourcePref.getDietHalal());
+                newPref.setDietSeafoodAllergy(sourcePref.getDietSeafoodAllergy());
+                newPref.setDietNoSpicy(sourcePref.getDietNoSpicy());
+                newPref.setDietOtherAllergy(sourcePref.getDietOtherAllergy());
+                customerPreferenceMapper.insert(newPref);
             } else {
                 mergePreferenceFields(sourcePref, targetPref);
                 customerPreferenceMapper.update(targetPref);
@@ -263,6 +293,21 @@ public class CustomerMergeService {
         for (CustomerOperationLog log : sourceLogs) {
             log.setCustomerId(targetId);
             customerOperationLogMapper.update(log);
+        }
+
+        CustomerBlacklist sourceBlacklist = customerBlacklistMapper.selectOneByQuery(
+                QueryWrapper.create().from(CustomerBlacklist.class)
+                        .where(CUSTOMER_BLACKLIST.CUSTOMER_ID.eq(sourceId))
+                        .and(CUSTOMER_BLACKLIST.STATUS.eq(2)));
+        if (sourceBlacklist != null) {
+            CustomerBlacklist targetBlacklist = customerBlacklistMapper.selectOneByQuery(
+                    QueryWrapper.create().from(CustomerBlacklist.class)
+                            .where(CUSTOMER_BLACKLIST.CUSTOMER_ID.eq(targetId))
+                            .and(CUSTOMER_BLACKLIST.STATUS.eq(2)));
+            if (targetBlacklist == null) {
+                sourceBlacklist.setCustomerId(targetId);
+                customerBlacklistMapper.update(sourceBlacklist);
+            }
         }
 
         if (source.getTotalOrders() != null) {

@@ -167,6 +167,12 @@ const routes = [
         meta: { title: '黑名单管理', icon: 'Warning', permission: 'customer:blacklist:list' }
       },
       {
+        path: 'customer/blacklist/detail/:id',
+        name: 'BlacklistDetail',
+        component: () => import('@/views/customer/BlacklistDetail.vue'),
+        meta: { title: '黑名单详情', icon: 'Warning', permission: 'customer:blacklist:list', hidden: true }
+      },
+      {
         path: 'customer/blacklistApproval',
         name: 'BlacklistApproval',
         component: () => import('@/views/customer/BlacklistApproval.vue'),
