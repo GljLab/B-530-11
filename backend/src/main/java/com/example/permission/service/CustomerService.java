@@ -5,9 +5,13 @@ import com.example.permission.common.PageResult;
 import com.example.permission.entity.Customer;
 import com.example.permission.entity.CustomerAddress;
 import com.example.permission.entity.CustomerOperationLog;
+import com.example.permission.entity.CustomerTag;
+import com.example.permission.entity.CustomerTagRelation;
 import com.example.permission.mapper.CustomerAddressMapper;
 import com.example.permission.mapper.CustomerMapper;
 import com.example.permission.mapper.CustomerOperationLogMapper;
+import com.example.permission.mapper.CustomerTagMapper;
+import com.example.permission.mapper.CustomerTagRelationMapper;
 import com.mybatisflex.core.paginate.Page;
 import com.mybatisflex.core.query.QueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,10 +41,17 @@ public class CustomerService {
     @Autowired
     private CustomerOperationLogMapper customerOperationLogMapper;
 
+    @Autowired
+    private CustomerTagMapper customerTagMapper;
+
+    @Autowired
+    private CustomerTagRelationMapper customerTagRelationMapper;
+
     public PageResult<Customer> pageList(Integer pageNum, Integer pageSize, String keyword,
                                           List<Integer> customerType, List<Integer> customerSource,
                                           List<Integer> status, List<Integer> importance,
                                           String createTimeStart, String createTimeEnd,
+                                          List<Long> tagIds, String tagLogic,
                                           Long operatorId, List<String> operatorRoles) {
         QueryWrapper query = QueryWrapper.create()
                 .from(Customer.class)
@@ -70,6 +81,14 @@ public class CustomerService {
             query.and(CUSTOMER.CREATE_TIME.le(createTimeEnd + " 23:59:59"));
         }
 
+        if (tagIds != null && !tagIds.isEmpty()) {
+            List<Long> customerIdsByTag = getCustomerIdsByTagIds(tagIds, tagLogic);
+            if (customerIdsByTag.isEmpty()) {
+                customerIdsByTag.add(-1L);
+            }
+            query.and(CUSTOMER.ID.in(customerIdsByTag));
+        }
+
         query.orderBy(CUSTOMER.CREATE_TIME.desc());
 
         Page<Customer> page = customerMapper.paginate(Page.of(pageNum, pageSize), query);
@@ -92,10 +111,29 @@ public class CustomerService {
         fillComputedFields(customer);
         loadAddresses(customer);
         loadReferrerName(customer);
+        loadTags(customer);
         if (!canViewFinance(operatorRoles)) {
             customer.setTotalSpent(null);
         }
         return customer;
+    }
+
+    public List<Customer> listByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        QueryWrapper query = QueryWrapper.create()
+                .from(Customer.class)
+                .where(CUSTOMER.DELETED.eq(0))
+                .and(CUSTOMER.ID.in(ids));
+        return customerMapper.selectListByQuery(query);
+    }
+
+    public List<Customer> listAll() {
+        QueryWrapper query = QueryWrapper.create()
+                .from(Customer.class)
+                .where(CUSTOMER.DELETED.eq(0));
+        return customerMapper.selectListByQuery(query);
     }
 
     @Transactional
@@ -216,6 +254,33 @@ public class CustomerService {
         return customerOperationLogMapper.selectListByQuery(query);
     }
 
+    public PageResult<CustomerOperationLog> queryOperationLogs(Integer pageNum, Integer pageSize,
+                                                                 Long customerId, Long operatorId,
+                                                                 Integer operationType,
+                                                                 String startTime, String endTime) {
+        QueryWrapper query = QueryWrapper.create()
+                .from(CustomerOperationLog.class);
+        if (customerId != null) {
+            query.and(CUSTOMER_OPERATION_LOG.CUSTOMER_ID.eq(customerId));
+        }
+        if (operatorId != null) {
+            query.and(CUSTOMER_OPERATION_LOG.OPERATOR_ID.eq(operatorId));
+        }
+        if (operationType != null) {
+            query.and(CUSTOMER_OPERATION_LOG.OPERATION_TYPE.eq(operationType));
+        }
+        if (StringUtils.hasText(startTime)) {
+            query.and(CUSTOMER_OPERATION_LOG.CREATE_TIME.ge(startTime + " 00:00:00"));
+        }
+        if (StringUtils.hasText(endTime)) {
+            query.and(CUSTOMER_OPERATION_LOG.CREATE_TIME.le(endTime + " 23:59:59"));
+        }
+        query.orderBy(CUSTOMER_OPERATION_LOG.CREATE_TIME.desc());
+        Page<CustomerOperationLog> page = customerOperationLogMapper.paginate(Page.of(pageNum, pageSize), query);
+        return new PageResult<>(page.getTotalRow(), page.getRecords(),
+                (long) page.getPageNumber(), (long) page.getPageSize());
+    }
+
     private void validateCustomer(Customer customer) {
         if (!StringUtils.hasText(customer.getName())) {
             throw new BusinessException("姓名不能为空");
@@ -308,6 +373,47 @@ public class CustomerService {
             if (referrer != null) {
                 customer.setReferrerName(referrer.getName());
             }
+        }
+    }
+
+    private void loadTags(Customer customer) {
+        QueryWrapper relQuery = QueryWrapper.create()
+                .from(CustomerTagRelation.class)
+                .where(com.example.permission.entity.table.CustomerTagRelationTableDef.CUSTOMER_TAG_RELATION.CUSTOMER_ID.eq(customer.getId()));
+        List<CustomerTagRelation> relations = customerTagRelationMapper.selectListByQuery(relQuery);
+        List<CustomerTag> tags = new java.util.ArrayList<>();
+        for (CustomerTagRelation rel : relations) {
+            CustomerTag tag = customerTagMapper.selectOneById(rel.getTagId());
+            if (tag != null && tag.getDeleted() == 0) {
+                tags.add(tag);
+            }
+        }
+        customer.setTags(tags);
+    }
+
+    private List<Long> getCustomerIdsByTagIds(List<Long> tagIds, String logic) {
+        QueryWrapper relQuery = QueryWrapper.create()
+                .from(CustomerTagRelation.class)
+                .where(com.example.permission.entity.table.CustomerTagRelationTableDef.CUSTOMER_TAG_RELATION.TAG_ID.in(tagIds));
+        List<CustomerTagRelation> relations = customerTagRelationMapper.selectListByQuery(relQuery);
+
+        if ("AND".equalsIgnoreCase(logic)) {
+            java.util.Map<Long, Integer> countMap = new java.util.HashMap<>();
+            for (CustomerTagRelation rel : relations) {
+                countMap.merge(rel.getCustomerId(), 1, Integer::sum);
+            }
+            List<Long> result = new java.util.ArrayList<>();
+            for (java.util.Map.Entry<Long, Integer> entry : countMap.entrySet()) {
+                if (entry.getValue() >= tagIds.size()) {
+                    result.add(entry.getKey());
+                }
+            }
+            return result;
+        } else {
+            return relations.stream()
+                    .map(CustomerTagRelation::getCustomerId)
+                    .distinct()
+                    .collect(java.util.stream.Collectors.toList());
         }
     }
 

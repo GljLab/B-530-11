@@ -37,12 +37,15 @@ public class CustomerController {
             @RequestParam(required = false) List<Integer> status,
             @RequestParam(required = false) List<Integer> importance,
             @RequestParam(required = false) String createTimeStart,
-            @RequestParam(required = false) String createTimeEnd) {
+            @RequestParam(required = false) String createTimeEnd,
+            @RequestParam(required = false) List<Long> tagIds,
+            @RequestParam(required = false, defaultValue = "OR") String tagLogic) {
         LoginUser loginUser = (LoginUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         List<String> roles = loginUser.getPermissions();
         PageResult<Customer> result = customerService.pageList(pageNum, pageSize, keyword,
                 customerType, customerSource, status, importance,
-                createTimeStart, createTimeEnd, loginUser.getUserId(), roles);
+                createTimeStart, createTimeEnd, tagIds, tagLogic,
+                loginUser.getUserId(), roles);
         return Result.success(result);
     }
 
@@ -101,6 +104,21 @@ public class CustomerController {
     public Result<List<CustomerOperationLog>> getOperationLogs(@PathVariable Long id) {
         List<CustomerOperationLog> logs = customerService.getOperationLogs(id);
         return Result.success(logs);
+    }
+
+    @GetMapping("/logs/page")
+    @PreAuthorize("hasAuthority('customer:log:query')")
+    public Result<PageResult<CustomerOperationLog>> queryOperationLogs(
+            @RequestParam(defaultValue = "1") Integer pageNum,
+            @RequestParam(defaultValue = "10") Integer pageSize,
+            @RequestParam(required = false) Long customerId,
+            @RequestParam(required = false) Long operatorId,
+            @RequestParam(required = false) Integer operationType,
+            @RequestParam(required = false) String startTime,
+            @RequestParam(required = false) String endTime) {
+        PageResult<CustomerOperationLog> result = customerService.queryOperationLogs(
+                pageNum, pageSize, customerId, operatorId, operationType, startTime, endTime);
+        return Result.success(result);
     }
 
     @GetMapping("/{customerId}/addresses")

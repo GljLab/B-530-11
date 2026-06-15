@@ -41,11 +41,39 @@
         >
           <el-icon><Unlock /></el-icon>解冻
         </el-button>
+        <el-button
+          v-if="hasPermission('customer:blacklist:submit') && customer?.status !== 3"
+          type="danger"
+          @click="openBlacklistDialog"
+        >
+          <el-icon><Warning /></el-icon>加入黑名单
+        </el-button>
+        <el-button v-if="hasPermission('customer:export')" @click="openExportDialog">
+          <el-icon><Download /></el-icon>导出
+        </el-button>
         <el-button v-if="hasPermission('customer:delete')" type="danger" @click="handleDelete">
           <el-icon><Delete /></el-icon>删除
         </el-button>
       </div>
     </div>
+
+    <el-alert
+      v-if="customer?.status === 3"
+      title="该客户已被加入黑名单"
+      type="error"
+      :closable="false"
+      show-icon
+      class="blacklist-alert"
+    >
+      <template v-if="blacklistInfo">
+        <div>黑名单类型：{{ blacklistInfo.blacklistType === 1 ? '临时' : '永久' }}</div>
+        <div v-if="blacklistInfo.blacklistType === 1 && blacklistInfo.expireTime">
+          到期时间：{{ blacklistInfo.expireTime }}
+        </div>
+        <div v-if="blacklistInfo.reason">拉黑原因：{{ blacklistReasonLabel(blacklistInfo.reason) }}</div>
+        <div v-if="blacklistInfo.detailDescription">详细说明：{{ blacklistInfo.detailDescription }}</div>
+      </template>
+    </el-alert>
 
     <el-row :gutter="16" class="stats-row">
       <el-col :span="6">
@@ -90,6 +118,34 @@
                 <el-descriptions-item label="生日">{{ customer.birthday || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ customer.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
+            </div>
+
+            <div class="info-section">
+              <h4 class="section-title">
+                标签
+                <el-button
+                  v-if="hasPermission('customer:tag:assign')"
+                  type="primary"
+                  link
+                  size="small"
+                  @click="openTagDialog"
+                >
+                  添加标签
+                </el-button>
+              </h4>
+              <div class="tag-list">
+                <el-tag
+                  v-for="tag in customerTags"
+                  :key="tag.id"
+                  closable
+                  :closable="hasPermission('customer:tag:assign')"
+                  @close="handleRemoveTag(tag.id)"
+                  class="customer-tag"
+                >
+                  {{ tag.tagName }}
+                </el-tag>
+                <span v-if="!customerTags.length" class="empty-text">暂无标签</span>
+              </div>
             </div>
 
             <div class="info-section">
@@ -139,6 +195,177 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="偏好设置" name="preference">
+          <div class="preference-header">
+            <el-button
+              v-if="hasPermission('customer:preference:manage')"
+              type="primary"
+              size="small"
+              @click="openPreferenceDialog"
+            >
+              <el-icon><Edit /></el-icon>编辑
+            </el-button>
+          </div>
+          <div class="info-sections">
+            <div class="info-section">
+              <h4 class="section-title">房间偏好</h4>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="偏好房型">{{ preference?.preferredRoomType || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="楼层偏好">{{ floorLabel(preference?.preferredFloor) }}</el-descriptions-item>
+                <el-descriptions-item label="朝向偏好">{{ preference?.preferredOrientation || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="床型偏好">{{ bedTypeLabel(preference?.preferredBedType) }}</el-descriptions-item>
+                <el-descriptions-item label="景观偏好">{{ preference?.preferredView || '-' }}</el-descriptions-item>
+              </el-descriptions>
+            </div>
+
+            <div class="info-section">
+              <h4 class="section-title">特殊需求</h4>
+              <div class="checkbox-display">
+                <el-checkbox
+                  v-for="opt in specialNeedsOptions"
+                  :key="opt.value"
+                  :model-value="specialNeedsSet.has(opt.value)"
+                  disabled
+                >
+                  {{ opt.label }}
+                </el-checkbox>
+              </div>
+              <div v-if="specialNeedsSet.size === 0" class="empty-text">暂无特殊需求</div>
+            </div>
+
+            <div class="info-section">
+              <h4 class="section-title">服务偏好</h4>
+              <div class="checkbox-display">
+                <el-checkbox
+                  v-for="opt in servicePreferenceOptions"
+                  :key="opt.value"
+                  :model-value="servicePreferenceSet.has(opt.value)"
+                  disabled
+                >
+                  {{ opt.label }}
+                </el-checkbox>
+              </div>
+              <div v-if="servicePreferenceSet.size === 0" class="empty-text">暂无服务偏好</div>
+            </div>
+
+            <div class="info-section">
+              <h4 class="section-title">饮食偏好</h4>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="素食">
+                  <el-tag :type="preference?.dietVegetarian ? 'success' : 'info'" size="small">
+                    {{ preference?.dietVegetarian ? '是' : '否' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="清真">
+                  <el-tag :type="preference?.dietHalal ? 'success' : 'info'" size="small">
+                    {{ preference?.dietHalal ? '是' : '否' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="海鲜过敏">
+                  <el-tag :type="preference?.dietSeafoodAllergy ? 'danger' : 'info'" size="small">
+                    {{ preference?.dietSeafoodAllergy ? '是' : '否' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="不吃辣">
+                  <el-tag :type="preference?.dietNoSpicy ? 'success' : 'info'" size="small">
+                    {{ preference?.dietNoSpicy ? '是' : '否' }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="其他过敏" :span="2">
+                  {{ preference?.dietOtherAllergy || '-' }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </div>
+          </div>
+          <el-empty v-if="!preference" description="暂无偏好设置" :image-size="60" />
+        </el-tab-pane>
+
+        <el-tab-pane label="备注记录" name="notes">
+          <div class="notes-header">
+            <el-button
+              v-if="hasPermission('customer:note:add')"
+              type="primary"
+              size="small"
+              @click="openNoteDialog"
+            >
+              <el-icon><Plus /></el-icon>添加备注
+            </el-button>
+          </div>
+          <el-timeline v-if="notes.length">
+            <el-timeline-item
+              v-for="note in sortedNotes"
+              :key="note.id"
+              :timestamp="note.createTime"
+              placement="top"
+            >
+              <el-card shadow="never" class="note-card">
+                <div class="note-card-header">
+                  <div class="note-meta">
+                    <span class="note-operator">{{ note.operatorName }}</span>
+                    <el-tag
+                      :type="note.importance === 3 ? 'danger' : note.importance === 2 ? 'warning' : 'info'"
+                      size="small"
+                    >
+                      {{ note.importance === 3 ? '紧急' : note.importance === 2 ? '重要' : '普通' }}
+                    </el-tag>
+                    <el-tag v-if="note.isPinned" type="warning" size="small">置顶</el-tag>
+                  </div>
+                  <div class="note-actions">
+                    <el-button
+                      v-if="note.isPinned"
+                      type="warning"
+                      link
+                      size="small"
+                      @click="handleUnpinNote(note.id)"
+                    >
+                      取消置顶
+                    </el-button>
+                    <el-button
+                      v-else
+                      type="primary"
+                      link
+                      size="small"
+                      @click="handlePinNote(note.id)"
+                    >
+                      置顶
+                    </el-button>
+                    <el-button
+                      type="danger"
+                      link
+                      size="small"
+                      @click="handleDeleteNote(note.id)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+                <div class="note-content">{{ note.content }}</div>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="暂无备注记录" :image-size="60" />
+        </el-tab-pane>
+
+        <el-tab-pane label="操作日志" name="logs">
+          <el-timeline v-if="operationLogs.length">
+            <el-timeline-item
+              v-for="log in operationLogs"
+              :key="log.id"
+              :timestamp="log.createTime"
+              placement="top"
+            >
+              <el-card shadow="never" class="log-card">
+                <div class="log-content">
+                  <el-tag size="small" class="log-type-tag">{{ operationTypeLabel(log.operationType) }}</el-tag>
+                  <span class="log-operator">{{ log.operatorName }}</span>
+                  <span v-if="log.remark" class="log-remark">{{ log.remark }}</span>
+                </div>
+              </el-card>
+            </el-timeline-item>
+          </el-timeline>
+          <el-empty v-else description="暂无操作日志" :image-size="60" />
+        </el-tab-pane>
+
         <el-tab-pane label="入住记录" name="stay">
           <el-empty description="暂无数据，客户尚未完成入住" :image-size="100" />
         </el-tab-pane>
@@ -178,14 +405,230 @@
         <el-button type="primary" :loading="freezeSaving" @click="handleFreezeSubmit">确认</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="tagDialogVisible" title="添加标签" width="480px" destroy-on-close>
+      <el-select
+        v-model="selectedTagIds"
+        multiple
+        filterable
+        placeholder="请选择标签"
+        style="width: 100%"
+      >
+        <el-option
+          v-for="tag in allTags"
+          :key="tag.id"
+          :label="tag.tagName"
+          :value="tag.id"
+        />
+      </el-select>
+      <template #footer>
+        <el-button @click="tagDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="tagSaving" @click="handleAddTags">确认</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="preferenceDialogVisible" title="编辑偏好设置" width="640px" destroy-on-close>
+      <el-form ref="preferenceFormRef" :model="preferenceForm" label-width="100px">
+        <h4 class="section-title">房间偏好</h4>
+        <el-form-item label="偏好房型">
+          <el-input v-model="preferenceForm.preferredRoomType" placeholder="如：豪华大床房" />
+        </el-form-item>
+        <el-form-item label="楼层偏好">
+          <el-select v-model="preferenceForm.preferredFloor" placeholder="请选择" clearable>
+            <el-option label="高楼层" value="high" />
+            <el-option label="低楼层" value="low" />
+            <el-option label="中间" value="mid" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="朝向偏好">
+          <el-input v-model="preferenceForm.preferredOrientation" placeholder="如：南向" />
+        </el-form-item>
+        <el-form-item label="床型偏好">
+          <el-select v-model="preferenceForm.preferredBedType" placeholder="请选择" clearable>
+            <el-option label="单人床" value="single" />
+            <el-option label="大床" value="king" />
+            <el-option label="双床" value="twin" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="景观偏好">
+          <el-input v-model="preferenceForm.preferredView" placeholder="如：海景" />
+        </el-form-item>
+
+        <h4 class="section-title">特殊需求</h4>
+        <el-form-item label="">
+          <el-checkbox-group v-model="preferenceForm.specialNeedsList">
+            <el-checkbox
+              v-for="opt in specialNeedsOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <h4 class="section-title">服务偏好</h4>
+        <el-form-item label="">
+          <el-checkbox-group v-model="preferenceForm.servicePreferenceList">
+            <el-checkbox
+              v-for="opt in servicePreferenceOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
+              {{ opt.label }}
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <h4 class="section-title">饮食偏好</h4>
+        <el-form-item label="素食">
+          <el-switch v-model="preferenceForm.dietVegetarian" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="清真">
+          <el-switch v-model="preferenceForm.dietHalal" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="海鲜过敏">
+          <el-switch v-model="preferenceForm.dietSeafoodAllergy" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="不吃辣">
+          <el-switch v-model="preferenceForm.dietNoSpicy" :active-value="1" :inactive-value="0" />
+        </el-form-item>
+        <el-form-item label="其他过敏">
+          <el-input v-model="preferenceForm.dietOtherAllergy" placeholder="请输入其他过敏信息" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="preferenceDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="preferenceSaving" @click="handleSavePreference">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="noteDialogVisible" title="添加备注" width="560px" destroy-on-close>
+      <el-form ref="noteFormRef" :model="noteForm" :rules="noteRules" label-width="80px">
+        <el-form-item label="内容" prop="content">
+          <el-input
+            v-model="noteForm.content"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入备注内容"
+          />
+        </el-form-item>
+        <el-form-item label="重要程度" prop="importance">
+          <el-select v-model="noteForm.importance" placeholder="请选择">
+            <el-option label="普通" :value="1" />
+            <el-option label="重要" :value="2" />
+            <el-option label="紧急" :value="3" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="附件">
+          <el-upload
+            v-model:file-list="noteForm.attachments"
+            :auto-upload="false"
+            :limit="3"
+          >
+            <el-button size="small">选择文件</el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="@角色">
+          <el-input v-model="noteForm.mentionRoles" placeholder="@角色（预留）" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="noteDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="noteSaving" @click="handleAddNote">确认</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="blacklistDialogVisible" title="加入黑名单" width="560px" destroy-on-close>
+      <el-alert
+        title="加入黑名单后该客户将无法预订和入住"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="freeze-warning"
+      />
+      <el-form ref="blacklistFormRef" :model="blacklistForm" :rules="blacklistRules" label-width="100px">
+        <el-form-item label="拉黑原因" prop="reason">
+          <el-select v-model="blacklistForm.reason" placeholder="请选择原因">
+            <el-option label="恶意破坏酒店设施" :value="1" />
+            <el-option label="逃单/拖欠费用" :value="2" />
+            <el-option label="骚扰其他客人或员工" :value="3" />
+            <el-option label="违反法律法规" :value="4" />
+            <el-option label="其他" :value="5" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="详细说明" prop="detailDescription">
+          <el-input
+            v-model="blacklistForm.detailDescription"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入详细说明"
+          />
+        </el-form-item>
+        <el-form-item label="证据材料">
+          <el-upload
+            v-model:file-list="blacklistForm.evidenceMaterials"
+            :auto-upload="false"
+            :limit="5"
+          >
+            <el-button size="small">选择文件</el-button>
+          </el-upload>
+        </el-form-item>
+        <el-form-item label="黑名单类型" prop="blacklistType">
+          <el-radio-group v-model="blacklistForm.blacklistType">
+            <el-radio :value="1">临时</el-radio>
+            <el-radio :value="2">永久</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="blacklistForm.blacklistType === 1" label="到期时间" prop="expireTime">
+          <el-date-picker
+            v-model="blacklistForm.expireTime"
+            type="datetime"
+            placeholder="请选择到期时间"
+            style="width: 100%"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="blacklistDialogVisible = false">取消</el-button>
+        <el-button type="danger" :loading="blacklistSaving" @click="handleBlacklistSubmit">确认提交</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="exportDialogVisible" title="导出客户数据" width="560px" destroy-on-close>
+      <el-form label-width="100px">
+        <el-form-item label="导出范围">
+          <el-radio-group v-model="exportForm.range">
+            <el-radio value="current">当前筛选</el-radio>
+            <el-radio value="all">全部</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="导出字段">
+          <el-checkbox-group v-model="exportForm.fields">
+            <el-checkbox value="basic">基础信息</el-checkbox>
+            <el-checkbox value="idCard">证件</el-checkbox>
+            <el-checkbox value="contact">联系方式</el-checkbox>
+            <el-checkbox value="category">分类</el-checkbox>
+            <el-checkbox value="statistics">统计</el-checkbox>
+            <el-checkbox value="tags">标签</el-checkbox>
+            <el-checkbox value="preference">偏好</el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" @click="handleExport">导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, User, Edit, Delete, Lock, Unlock, GoldMedal } from '@element-plus/icons-vue'
+import { ArrowLeft, User, Edit, Delete, Lock, Unlock, GoldMedal, Warning, Download, Plus } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/api'
 
@@ -221,12 +664,12 @@ const importanceLabel = (v) => {
 }
 
 const statusLabel = (v) => {
-  const map = { 1: '正常', 2: '冻结' }
+  const map = { 1: '正常', 2: '冻结', 3: '黑名单' }
   return map[v] ?? '-'
 }
 
 const statusTagType = (v) => {
-  const map = { 1: 'success', 2: 'danger' }
+  const map = { 1: 'success', 2: 'danger', 3: 'danger' }
   return map[v] ?? 'info'
 }
 
@@ -245,9 +688,61 @@ const addressTypeTagType = (v) => {
   return map[v] ?? 'info'
 }
 
+const floorLabel = (v) => {
+  const map = { high: '高楼层', low: '低楼层', mid: '中间' }
+  return map[v] ?? '-'
+}
+
+const bedTypeLabel = (v) => {
+  const map = { single: '单人床', king: '大床', twin: '双床' }
+  return map[v] ?? '-'
+}
+
+const operationTypeLabel = (v) => {
+  const map = {
+    1: '创建客户', 2: '修改信息', 3: '冻结', 4: '解冻', 5: '添加标签',
+    6: '移除标签', 7: '修改偏好', 8: '添加备注', 9: '加入黑名单',
+    10: '解除黑名单', 11: '客户合并', 12: '导入客户', 13: '导出客户'
+  }
+  return map[v] ?? '未知操作'
+}
+
+const blacklistReasonLabel = (v) => {
+  const map = { 1: '恶意破坏酒店设施', 2: '逃单/拖欠费用', 3: '骚扰其他客人或员工', 4: '违反法律法规', 5: '其他' }
+  return map[v] ?? '-'
+}
+
+const specialNeedsOptions = [
+  { value: 'no_smoke', label: '无烟房' },
+  { value: 'quiet', label: '安静房间' },
+  { value: 'away_elevator', label: '远离电梯' },
+  { value: 'near_elevator', label: '靠近电梯' },
+  { value: 'extra_bed', label: '需要加床' },
+  { value: 'baby_cot', label: '需要婴儿床' },
+  { value: 'pollen_allergy', label: '花粉过敏' },
+  { value: 'humidifier', label: '需要加湿器' },
+  { value: 'extra_pillow', label: '多枕头' },
+  { value: 'low_floor', label: '需要低楼层' }
+]
+
+const servicePreferenceOptions = [
+  { value: 'do_not_disturb', label: '免打扰' },
+  { value: 'early_newspaper', label: '要早报' },
+  { value: 'laundry', label: '洗衣服务' },
+  { value: 'wake_up_call', label: '叫醒服务' },
+  { value: 'early_checkin', label: '提前check-in' },
+  { value: 'late_checkout', label: '延迟checkout' }
+]
+
 const activeTab = ref('basic')
 const customer = ref(null)
 const addresses = ref([])
+const customerTags = ref([])
+const allTags = ref([])
+const preference = ref(null)
+const notes = ref([])
+const operationLogs = ref([])
+const blacklistInfo = ref(null)
 const pageLoading = ref(false)
 
 const freezeDialogVisible = ref(false)
@@ -259,12 +754,91 @@ const freezeRules = {
   reason: [{ required: true, message: '请输入原因', trigger: 'blur' }]
 }
 
+const tagDialogVisible = ref(false)
+const tagSaving = ref(false)
+const selectedTagIds = ref([])
+
+const preferenceDialogVisible = ref(false)
+const preferenceSaving = ref(false)
+const preferenceFormRef = ref(null)
+const preferenceForm = reactive({
+  preferredRoomType: '',
+  preferredFloor: '',
+  preferredOrientation: '',
+  preferredBedType: '',
+  preferredView: '',
+  specialNeedsList: [],
+  servicePreferenceList: [],
+  dietVegetarian: 0,
+  dietHalal: 0,
+  dietSeafoodAllergy: 0,
+  dietNoSpicy: 0,
+  dietOtherAllergy: ''
+})
+
+const noteDialogVisible = ref(false)
+const noteSaving = ref(false)
+const noteFormRef = ref(null)
+const noteForm = reactive({
+  content: '',
+  importance: 1,
+  attachments: [],
+  mentionRoles: ''
+})
+const noteRules = {
+  content: [{ required: true, message: '请输入备注内容', trigger: 'blur' }],
+  importance: [{ required: true, message: '请选择重要程度', trigger: 'change' }]
+}
+
+const blacklistDialogVisible = ref(false)
+const blacklistSaving = ref(false)
+const blacklistFormRef = ref(null)
+const blacklistForm = reactive({
+  reason: null,
+  detailDescription: '',
+  evidenceMaterials: [],
+  blacklistType: 2,
+  expireTime: null
+})
+const blacklistRules = {
+  reason: [{ required: true, message: '请选择拉黑原因', trigger: 'change' }],
+  detailDescription: [{ required: true, message: '请输入详细说明', trigger: 'blur' }],
+  blacklistType: [{ required: true, message: '请选择黑名单类型', trigger: 'change' }]
+}
+
+const exportDialogVisible = ref(false)
+const exporting = ref(false)
+const exportForm = reactive({
+  range: 'current',
+  fields: ['basic', 'contact', 'category']
+})
+
+const specialNeedsSet = computed(() => {
+  if (!preference.value?.specialNeeds) return new Set()
+  return new Set(preference.value.specialNeeds.split(',').filter(Boolean))
+})
+
+const servicePreferenceSet = computed(() => {
+  if (!preference.value?.servicePreference) return new Set()
+  return new Set(preference.value.servicePreference.split(',').filter(Boolean))
+})
+
+const sortedNotes = computed(() => {
+  return [...notes.value].sort((a, b) => {
+    if (a.isPinned !== b.isPinned) return b.isPinned - a.isPinned
+    return new Date(b.createTime) - new Date(a.createTime)
+  })
+})
+
 const loadCustomer = async () => {
   pageLoading.value = true
   try {
     const res = await api.customer.getById(id)
     if (res.code === 200 && res.data) {
       customer.value = res.data
+      if (res.data.status === 3) {
+        loadBlacklistInfo()
+      }
     } else {
       ElMessage.error(res.message || '获取客户详情失败')
     }
@@ -283,6 +857,72 @@ const loadAddresses = async () => {
     }
   } catch {
     addresses.value = []
+  }
+}
+
+const loadCustomerTags = async () => {
+  try {
+    const res = await api.customer.getCustomerTags(id)
+    if (res.code === 200) {
+      customerTags.value = res.data || []
+    }
+  } catch {
+    customerTags.value = []
+  }
+}
+
+const loadAllTags = async () => {
+  try {
+    const res = await api.customer.getTagList()
+    if (res.code === 200) {
+      allTags.value = res.data || []
+    }
+  } catch {
+    allTags.value = []
+  }
+}
+
+const loadPreference = async () => {
+  try {
+    const res = await api.customer.getPreference(id)
+    if (res.code === 200) {
+      preference.value = res.data || null
+    }
+  } catch {
+    preference.value = null
+  }
+}
+
+const loadNotes = async () => {
+  try {
+    const res = await api.customer.getNotes(id)
+    if (res.code === 200) {
+      notes.value = res.data || []
+    }
+  } catch {
+    notes.value = []
+  }
+}
+
+const loadOperationLogs = async () => {
+  try {
+    const res = await api.customer.getOperationLogs(id)
+    if (res.code === 200) {
+      operationLogs.value = res.data || []
+    }
+  } catch {
+    operationLogs.value = []
+  }
+}
+
+const loadBlacklistInfo = async () => {
+  try {
+    const res = await api.customer.checkBlacklist(id)
+    if (res.code === 200) {
+      blacklistInfo.value = res.data || null
+    }
+  } catch {
+    blacklistInfo.value = null
   }
 }
 
@@ -362,9 +1002,265 @@ const handleDeleteAddress = async (addrId) => {
   } catch {}
 }
 
+const openTagDialog = async () => {
+  selectedTagIds.value = []
+  await loadAllTags()
+  tagDialogVisible.value = true
+}
+
+const handleAddTags = async () => {
+  if (!selectedTagIds.value.length) {
+    ElMessage.warning('请选择至少一个标签')
+    return
+  }
+  tagSaving.value = true
+  try {
+    const res = await api.customer.addTagsToCustomer(id, selectedTagIds.value)
+    if (res.code === 200) {
+      ElMessage.success('添加标签成功')
+      tagDialogVisible.value = false
+      await loadCustomerTags()
+    } else {
+      ElMessage.error(res.message || '添加标签失败')
+    }
+  } catch {
+    ElMessage.error('添加标签失败')
+  } finally {
+    tagSaving.value = false
+  }
+}
+
+const handleRemoveTag = async (tagId) => {
+  try {
+    await ElMessageBox.confirm('确认移除该标签？', '提示', {
+      confirmButtonText: '确认',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const res = await api.customer.removeTagFromCustomer(id, tagId)
+    if (res.code === 200) {
+      ElMessage.success('移除标签成功')
+      await loadCustomerTags()
+    } else {
+      ElMessage.error(res.message || '移除标签失败')
+    }
+  } catch {}
+}
+
+const openPreferenceDialog = () => {
+  const p = preference.value || {}
+  preferenceForm.preferredRoomType = p.preferredRoomType || ''
+  preferenceForm.preferredFloor = p.preferredFloor || ''
+  preferenceForm.preferredOrientation = p.preferredOrientation || ''
+  preferenceForm.preferredBedType = p.preferredBedType || ''
+  preferenceForm.preferredView = p.preferredView || ''
+  preferenceForm.specialNeedsList = p.specialNeeds ? p.specialNeeds.split(',').filter(Boolean) : []
+  preferenceForm.servicePreferenceList = p.servicePreference ? p.servicePreference.split(',').filter(Boolean) : []
+  preferenceForm.dietVegetarian = p.dietVegetarian || 0
+  preferenceForm.dietHalal = p.dietHalal || 0
+  preferenceForm.dietSeafoodAllergy = p.dietSeafoodAllergy || 0
+  preferenceForm.dietNoSpicy = p.dietNoSpicy || 0
+  preferenceForm.dietOtherAllergy = p.dietOtherAllergy || ''
+  preferenceDialogVisible.value = true
+}
+
+const handleSavePreference = async () => {
+  preferenceSaving.value = true
+  try {
+    const data = {
+      customerId: Number(id),
+      preferredRoomType: preferenceForm.preferredRoomType,
+      preferredFloor: preferenceForm.preferredFloor,
+      preferredOrientation: preferenceForm.preferredOrientation,
+      preferredBedType: preferenceForm.preferredBedType,
+      preferredView: preferenceForm.preferredView,
+      specialNeeds: preferenceForm.specialNeedsList.join(','),
+      servicePreference: preferenceForm.servicePreferenceList.join(','),
+      dietVegetarian: preferenceForm.dietVegetarian,
+      dietHalal: preferenceForm.dietHalal,
+      dietSeafoodAllergy: preferenceForm.dietSeafoodAllergy,
+      dietNoSpicy: preferenceForm.dietNoSpicy,
+      dietOtherAllergy: preferenceForm.dietOtherAllergy
+    }
+    const res = await api.customer.savePreference(data)
+    if (res.code === 200) {
+      ElMessage.success('保存偏好成功')
+      preferenceDialogVisible.value = false
+      await loadPreference()
+    } else {
+      ElMessage.error(res.message || '保存偏好失败')
+    }
+  } catch {
+    ElMessage.error('保存偏好失败')
+  } finally {
+    preferenceSaving.value = false
+  }
+}
+
+const openNoteDialog = () => {
+  noteForm.content = ''
+  noteForm.importance = 1
+  noteForm.attachments = []
+  noteForm.mentionRoles = ''
+  noteDialogVisible.value = true
+}
+
+const handleAddNote = async () => {
+  const valid = await noteFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  noteSaving.value = true
+  try {
+    const data = {
+      customerId: Number(id),
+      content: noteForm.content,
+      importance: noteForm.importance,
+      mentionRoles: noteForm.mentionRoles
+    }
+    const res = await api.customer.addNote(data)
+    if (res.code === 200) {
+      ElMessage.success('添加备注成功')
+      noteDialogVisible.value = false
+      await loadNotes()
+    } else {
+      ElMessage.error(res.message || '添加备注失败')
+    }
+  } catch {
+    ElMessage.error('添加备注失败')
+  } finally {
+    noteSaving.value = false
+  }
+}
+
+const handleDeleteNote = async (noteId) => {
+  try {
+    await ElMessageBox.confirm('确认删除该备注？', '警告', {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    const res = await api.customer.deleteNote(noteId)
+    if (res.code === 200) {
+      ElMessage.success('删除成功')
+      await loadNotes()
+    } else {
+      ElMessage.error(res.message || '删除失败')
+    }
+  } catch {}
+}
+
+const handlePinNote = async (noteId) => {
+  try {
+    const res = await api.customer.pinNote(noteId)
+    if (res.code === 200) {
+      ElMessage.success('置顶成功')
+      await loadNotes()
+    } else {
+      ElMessage.error(res.message || '置顶失败')
+    }
+  } catch {
+    ElMessage.error('置顶失败')
+  }
+}
+
+const handleUnpinNote = async (noteId) => {
+  try {
+    const res = await api.customer.unpinNote(noteId)
+    if (res.code === 200) {
+      ElMessage.success('取消置顶成功')
+      await loadNotes()
+    } else {
+      ElMessage.error(res.message || '取消置顶失败')
+    }
+  } catch {
+    ElMessage.error('取消置顶失败')
+  }
+}
+
+const openBlacklistDialog = () => {
+  blacklistForm.reason = null
+  blacklistForm.detailDescription = ''
+  blacklistForm.evidenceMaterials = []
+  blacklistForm.blacklistType = 2
+  blacklistForm.expireTime = null
+  blacklistDialogVisible.value = true
+}
+
+const handleBlacklistSubmit = async () => {
+  const valid = await blacklistFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  if (blacklistForm.blacklistType === 1 && !blacklistForm.expireTime) {
+    ElMessage.warning('临时黑名单请选择到期时间')
+    return
+  }
+
+  blacklistSaving.value = true
+  try {
+    const data = {
+      customerId: Number(id),
+      reason: blacklistForm.reason,
+      detailDescription: blacklistForm.detailDescription,
+      blacklistType: blacklistForm.blacklistType,
+      expireTime: blacklistForm.blacklistType === 1 ? blacklistForm.expireTime : null
+    }
+    const res = await api.customer.submitBlacklist(data)
+    if (res.code === 200) {
+      ElMessage.success('提交黑名单申请成功')
+      blacklistDialogVisible.value = false
+      await loadCustomer()
+    } else {
+      ElMessage.error(res.message || '提交失败')
+    }
+  } catch {
+    ElMessage.error('提交失败')
+  } finally {
+    blacklistSaving.value = false
+  }
+}
+
+const openExportDialog = () => {
+  exportForm.range = 'current'
+  exportForm.fields = ['basic', 'contact', 'category']
+  exportDialogVisible.value = true
+}
+
+const handleExport = async () => {
+  if (!exportForm.fields.length) {
+    ElMessage.warning('请至少选择一个导出字段')
+    return
+  }
+  exporting.value = true
+  try {
+    const data = {
+      customerId: Number(id),
+      range: exportForm.range,
+      fields: exportForm.fields
+    }
+    const res = await api.customer.exportCustomers(data)
+    const blob = new Blob([res], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `客户_${customer.value?.name || id}_导出.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    exportDialogVisible.value = false
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
+
 onMounted(() => {
   loadCustomer()
   loadAddresses()
+  loadCustomerTags()
+  loadPreference()
+  loadNotes()
+  loadOperationLogs()
 })
 </script>
 
@@ -422,6 +1318,15 @@ onMounted(() => {
   gap: 10px;
 }
 
+.blacklist-alert {
+  margin-bottom: 16px;
+}
+
+.blacklist-alert div {
+  font-size: 13px;
+  line-height: 1.8;
+}
+
 .stats-row {
   margin-bottom: 16px;
 }
@@ -466,6 +1371,24 @@ onMounted(() => {
   margin: 0 0 12px 0;
   padding-left: 10px;
   border-left: 3px solid #409eff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.customer-tag {
+  border-radius: 6px;
+}
+
+.empty-text {
+  font-size: 13px;
+  color: #909399;
 }
 
 .address-list {
@@ -521,5 +1444,82 @@ onMounted(() => {
 
 .freeze-warning {
   margin-bottom: 16px;
+}
+
+.preference-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.checkbox-display {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+
+.notes-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
+.note-card {
+  border-radius: 10px;
+}
+
+.note-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.note-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-operator {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.note-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.note-content {
+  font-size: 14px;
+  color: #4a5568;
+  line-height: 1.8;
+}
+
+.log-card {
+  border-radius: 10px;
+}
+
+.log-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.log-type-tag {
+  flex-shrink: 0;
+}
+
+.log-operator {
+  font-size: 14px;
+  color: #2d3748;
+  font-weight: 500;
+}
+
+.log-remark {
+  font-size: 13px;
+  color: #718096;
 }
 </style>

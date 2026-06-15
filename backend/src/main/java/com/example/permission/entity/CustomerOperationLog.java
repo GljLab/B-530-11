@@ -26,5 +26,13 @@ public class CustomerOperationLog {
 
     private String remark;
 
+    private String changeField;
+
+    private String oldValue;
+
+    private String newValue;
+
+    private String operatorIp;
+
     private LocalDateTime createTime;
 }

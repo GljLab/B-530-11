@@ -28,6 +28,12 @@
         <el-button v-if="hasPermission('customer:add')" type="primary" @click="handleCreate">
           <el-icon><Plus /></el-icon>新建客户
         </el-button>
+        <el-button v-if="hasPermission('customer:export')" @click="openExportDialog">
+          <el-icon><Download /></el-icon>导出
+        </el-button>
+        <el-button v-if="hasPermission('customer:dedup')" @click="router.push('/customer/merge')">
+          <el-icon><CopyDocument /></el-icon>查重
+        </el-button>
       </div>
       <div v-if="advancedFilterVisible" class="advanced-filter">
         <el-select
@@ -77,6 +83,20 @@
           value-format="YYYY-MM-DD"
           style="width: 280px"
         />
+        <el-select
+          v-model="queryParams.tagIds"
+          placeholder="按标签筛选"
+          multiple
+          clearable
+          collapse-tags
+          style="width: 240px"
+        >
+          <el-option v-for="tag in tagList" :key="tag.id" :label="tag.name" :value="tag.id" />
+        </el-select>
+        <el-radio-group v-model="queryParams.tagLogic" size="small" style="margin-left: 4px">
+          <el-radio-button value="OR">OR</el-radio-button>
+          <el-radio-button value="AND">AND</el-radio-button>
+        </el-radio-group>
       </div>
     </el-card>
 
@@ -96,6 +116,8 @@
         </el-table-column>
         <el-table-column prop="name" label="姓名" min-width="100">
           <template #default="{ row }">
+            <el-icon v-if="row.status === 3" class="blacklist-warning"><Warning /></el-icon>
+            <el-icon v-if="row.hasImportantNote" class="important-note-bell"><Bell /></el-icon>
             <span>{{ row.name }}</span>
             <el-icon v-if="row.importance === 3" class="vip-crown"><GoldMedal /></el-icon>
           </template>
@@ -113,6 +135,23 @@
             {{ customerSourceLabel(row.customerSource) }}
           </template>
         </el-table-column>
+        <el-table-column label="标签" min-width="160" align="center">
+          <template #default="{ row }">
+            <template v-if="row.tags && row.tags.length > 0">
+              <el-tag
+                v-for="(tag, idx) in row.tags.slice(0, 3)"
+                :key="tag.id || tag.tagId"
+                size="small"
+                :type="tagColorTypes[idx % tagColorTypes.length]"
+                style="margin: 2px"
+              >{{ tag.name || tag.tagName }}</el-tag>
+              <el-tag v-if="row.tags.length > 3" size="small" type="info" style="margin: 2px">
+                +{{ row.tags.length - 3 }}
+              </el-tag>
+            </template>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
         <el-table-column label="累计消费" width="120" align="right" sortable="custom" prop="totalSpent">
           <template #default="{ row }">
             <span v-if="hasPermission('customer:finance:view')" class="amount-text">
@@ -123,8 +162,8 @@
         </el-table-column>
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.status === 1 ? 'success' : 'danger'">
-              {{ row.status === 1 ? '正常' : '冻结' }}
+            <el-tag size="small" :type="statusTagType(row.status)">
+              {{ statusLabel(row.status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -211,6 +250,49 @@
         >确认{{ freezeForm.action === 'freeze' ? '冻结' : '解冻' }}</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="exportDialogVisible"
+      title="导出客户数据"
+      width="520px"
+      destroy-on-close
+    >
+      <el-form label-width="100px">
+        <el-form-item label="导出范围">
+          <el-radio-group v-model="exportForm.range">
+            <el-radio value="filter">当前筛选</el-radio>
+            <el-radio value="all">全部</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="exportForm.range === 'custom'" label="自定义范围">
+          <el-date-picker
+            v-model="exportForm.customRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="导出字段">
+          <el-checkbox-group v-model="exportForm.fields">
+            <el-checkbox value="basic" label="基础信息" />
+            <el-checkbox value="idcard" label="证件" />
+            <el-checkbox value="contact" label="联系方式" />
+            <el-checkbox value="category" label="分类" />
+            <el-checkbox value="statistics" label="统计" />
+            <el-checkbox value="tags" label="标签" />
+            <el-checkbox value="preference" label="偏好" />
+          </el-checkbox-group>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="exportDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exportLoading" @click="handleExport">确认导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -218,7 +300,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Plus, ArrowUp, ArrowDown, GoldMedal } from '@element-plus/icons-vue'
+import { Search, Plus, ArrowUp, ArrowDown, GoldMedal, Warning, Bell, Download, CopyDocument } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import api from '@/api'
 
@@ -244,7 +326,8 @@ const customerSourceOptions = [
 
 const statusOptions = [
   { value: 1, label: '正常' },
-  { value: 2, label: '冻结' }
+  { value: 2, label: '冻结' },
+  { value: 3, label: '黑名单' }
 ]
 
 const importanceOptions = [
@@ -268,6 +351,18 @@ const customerSourceLabel = (val) => {
   return map[val] || '-'
 }
 
+const statusTagType = (val) => {
+  const map = { 1: 'success', 2: 'danger', 3: 'danger' }
+  return map[val] || 'info'
+}
+
+const statusLabel = (val) => {
+  const map = { 1: '正常', 2: '冻结', 3: '黑名单' }
+  return map[val] || '-'
+}
+
+const tagColorTypes = ['', 'success', 'warning', 'danger', 'info']
+
 const formatAmount = (val) => {
   if (val === null || val === undefined) return '0.00'
   return Number(val).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')
@@ -277,6 +372,7 @@ const advancedFilterVisible = ref(false)
 const tableData = ref([])
 const total = ref(0)
 const tableLoading = ref(false)
+const tagList = ref([])
 
 const queryParams = reactive({
   keyword: '',
@@ -285,6 +381,8 @@ const queryParams = reactive({
   status: null,
   importance: [],
   registerDateRange: null,
+  tagIds: [],
+  tagLogic: 'OR',
   pageNum: 1,
   pageSize: 10,
   orderBy: '',
@@ -315,6 +413,10 @@ const loadData = async () => {
       params.createTimeStart = queryParams.registerDateRange[0]
       params.createTimeEnd = queryParams.registerDateRange[1]
     }
+    if (queryParams.tagIds.length > 0) {
+      params.tagIds = queryParams.tagIds.join(',')
+      params.tagLogic = queryParams.tagLogic
+    }
     const res = await api.customer.getPage(params)
     if (res.code === 200) {
       tableData.value = res.data?.records || res.data?.list || []
@@ -340,6 +442,8 @@ const handleReset = () => {
   queryParams.status = null
   queryParams.importance = []
   queryParams.registerDateRange = null
+  queryParams.tagIds = []
+  queryParams.tagLogic = 'OR'
   queryParams.pageNum = 1
   queryParams.orderBy = ''
   queryParams.orderDir = ''
@@ -417,8 +521,70 @@ const handleFreezeSubmit = async () => {
   }
 }
 
+const exportDialogVisible = ref(false)
+const exportLoading = ref(false)
+const exportForm = reactive({
+  range: 'filter',
+  customRange: null,
+  fields: ['basic', 'contact', 'category']
+})
+
+const openExportDialog = () => {
+  exportForm.range = 'filter'
+  exportForm.customRange = null
+  exportForm.fields = ['basic', 'contact', 'category']
+  exportDialogVisible.value = true
+}
+
+const handleExport = async () => {
+  exportLoading.value = true
+  try {
+    const data = { fields: exportForm.fields }
+    if (exportForm.range === 'filter') {
+      data.status = queryParams.status || undefined
+      if (queryParams.customerType.length > 0) data.customerType = queryParams.customerType.join(',')
+      if (queryParams.customerSource.length > 0) data.customerSource = queryParams.customerSource.join(',')
+      if (queryParams.importance.length > 0) data.importance = queryParams.importance.join(',')
+      if (queryParams.tagIds.length > 0) {
+        data.tagIds = queryParams.tagIds.join(',')
+        data.tagLogic = queryParams.tagLogic
+      }
+      if (queryParams.keyword) data.keyword = queryParams.keyword
+    } else if (exportForm.range === 'custom' && exportForm.customRange) {
+      data.createTimeStart = exportForm.customRange[0]
+      data.createTimeEnd = exportForm.customRange[1]
+    }
+    const res = await api.customer.exportCustomers(data)
+    const blob = new Blob([res], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `客户数据_${new Date().toISOString().slice(0, 10)}.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+    exportDialogVisible.value = false
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+const loadTagList = async () => {
+  try {
+    const res = await api.customer.getTagList()
+    if (res.code === 200) {
+      tagList.value = res.data || []
+    }
+  } catch {
+    tagList.value = []
+  }
+}
+
 onMounted(() => {
   loadData()
+  loadTagList()
 })
 </script>
 
@@ -465,6 +631,19 @@ onMounted(() => {
   color: #e6a23c;
   margin-left: 4px;
   vertical-align: middle;
+}
+
+.blacklist-warning {
+  color: #f56c6c;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+.important-note-bell {
+  color: #f56c6c;
+  margin-right: 2px;
+  vertical-align: middle;
+  font-size: 14px;
 }
 
 .amount-text {

@@ -305,11 +305,49 @@ const api = {
     freeze: (id, data) => request.put(`/customer/${id}/freeze`, data),
     unfreeze: (id, data) => request.put(`/customer/${id}/unfreeze`, data),
     getOperationLogs: (id) => request.get(`/customer/${id}/logs`),
+    getOperationLogPage: (params) => request.get('/customer/logs/page', { params }),
     getAddresses: (customerId) => request.get(`/customer/${customerId}/addresses`),
     addAddress: (data) => request.post('/customer/address', data),
     updateAddress: (data) => request.put('/customer/address', data),
     deleteAddress: (id) => request.delete(`/customer/address/${id}`),
-    setDefaultAddress: (id) => request.put(`/customer/address/${id}/default`)
+    setDefaultAddress: (id) => request.put(`/customer/address/${id}/default`),
+
+    getTagList: () => request.get('/customer/tag/list'),
+    addTag: (data) => request.post('/customer/tag', data),
+    updateTag: (data) => request.put('/customer/tag', data),
+    deleteTag: (id) => request.delete(`/customer/tag/${id}`),
+    getCustomerTags: (customerId) => request.get(`/customer/tag/customer/${customerId}`),
+    addTagsToCustomer: (customerId, tagIds) => request.post(`/customer/tag/customer/${customerId}/tags`, tagIds),
+    removeTagFromCustomer: (customerId, tagId) => request.delete(`/customer/tag/customer/${customerId}/tag/${tagId}`),
+    getTagStatistics: () => request.get('/customer/tag/statistics'),
+
+    getPreference: (customerId) => request.get(`/customer/preference/${customerId}`),
+    savePreference: (data) => request.post('/customer/preference', data),
+
+    getNotes: (customerId) => request.get(`/customer/note/${customerId}`),
+    addNote: (data) => request.post('/customer/note', data),
+    deleteNote: (id) => request.delete(`/customer/note/${id}`),
+    pinNote: (id) => request.put(`/customer/note/${id}/pin`),
+    unpinNote: (id) => request.put(`/customer/note/${id}/unpin`),
+
+    getBlacklistPage: (params) => request.get('/customer/blacklist/page', { params }),
+    getBlacklistPending: () => request.get('/customer/blacklist/pending'),
+    getBlacklistPendingRemove: () => request.get('/customer/blacklist/pending-remove'),
+    checkBlacklist: (customerId) => request.get(`/customer/blacklist/check/${customerId}`),
+    submitBlacklist: (data) => request.post('/customer/blacklist/submit', data),
+    approveBlacklist: (id, data) => request.put(`/customer/blacklist/approve/${id}`, data),
+    rejectBlacklist: (id, data) => request.put(`/customer/blacklist/reject/${id}`, data),
+    submitBlacklistRemove: (id, data) => request.put(`/customer/blacklist/remove/${id}`, data),
+    approveBlacklistRemove: (id, data) => request.put(`/customer/blacklist/remove-approve/${id}`, data),
+    exportBlacklist: (params) => request.get('/customer/blacklist/export', { params, responseType: 'blob' }),
+
+    checkDuplicate: (data) => request.post('/customer/merge/check-duplicate', data),
+    scanDuplicates: () => request.get('/customer/merge/scan-duplicates'),
+    mergeCustomers: (data) => request.post('/customer/merge/merge', data),
+
+    downloadImportTemplate: () => request.get('/customer/import-export/template', { responseType: 'blob' }),
+    importCustomers: (formData) => request.post('/customer/import-export/import', formData, { headers: { 'Content-Type': 'multipart/form-data' } }),
+    exportCustomers: (data) => request.post('/customer/import-export/export', data, { responseType: 'blob' })
   }
 }
 

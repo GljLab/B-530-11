@@ -102,4 +102,10 @@ public class Customer {
 
     @Column(ignore = true)
     private Long lifecycleDays;
+
+    @Column(ignore = true)
+    private java.util.List<CustomerTag> tags;
+
+    @Column(ignore = true)
+    private Boolean hasImportantNote;
 }

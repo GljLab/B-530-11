@@ -14,6 +14,27 @@
         <el-step title="客户分类" />
       </el-steps>
 
+      <el-alert
+        v-if="showDuplicateWarning && !dismissedDuplicate"
+        type="warning"
+        :closable="false"
+        class="duplicate-alert"
+      >
+        <template #title>
+          <span>检测到相似客户</span>
+        </template>
+        <div class="duplicate-list">
+          <div v-for="item in duplicateList" :key="item.id" class="duplicate-item">
+            <span class="dup-name">{{ item.name }}</span>
+            <span class="dup-phone">{{ item.phone }}</span>
+            <span class="dup-id">{{ item.idNumber }}</span>
+            <span class="dup-score">相似度: {{ formatSimilarity(item.similarity) }}</span>
+            <el-button type="primary" link @click="router.push(`/customer/detail/${item.id}`)">查看详情</el-button>
+          </div>
+        </div>
+        <el-button size="small" @click="dismissedDuplicate = true" style="margin-top: 8px">仍要创建</el-button>
+      </el-alert>
+
       <el-form
         ref="formRef"
         :model="form"
@@ -26,7 +47,7 @@
           <el-row :gutter="24">
             <el-col :span="12">
               <el-form-item label="姓名" prop="name">
-                <el-input v-model="form.name" placeholder="请输入客户姓名" maxlength="50" />
+                <el-input v-model="form.name" placeholder="请输入客户姓名" maxlength="50" @blur="checkDuplicate" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
@@ -82,7 +103,7 @@
             </el-col>
             <el-col :span="12">
               <el-form-item label="证件号码" prop="idNumber">
-                <el-input v-model="form.idNumber" placeholder="请输入证件号码" @blur="checkIdNumberUnique" />
+                <el-input v-model="form.idNumber" placeholder="请输入证件号码" @blur="onIdNumberBlur" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -247,6 +268,25 @@
               </el-form-item>
             </el-col>
           </el-row>
+          <el-row :gutter="24">
+            <el-col :span="12">
+              <el-form-item label="标签">
+                <el-select
+                  v-model="selectedTagIds"
+                  multiple
+                  placeholder="请选择标签"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="tag in tagList"
+                    :key="tag.id"
+                    :label="tag.name"
+                    :value="tag.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
         </div>
 
         <el-form-item>
@@ -265,7 +305,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
@@ -280,6 +320,11 @@ const formRef = ref(null)
 const submitting = ref(false)
 const frontFileList = ref([])
 const backFileList = ref([])
+const duplicateList = ref([])
+const showDuplicateWarning = ref(false)
+const dismissedDuplicate = ref(false)
+const tagList = ref([])
+const selectedTagIds = ref([])
 
 const nationalityOptions = [
   '中国', '美国', '英国', '日本', '韩国',
@@ -426,6 +471,52 @@ const checkIdNumberUnique = async () => {
   } catch {}
 }
 
+const checkDuplicate = async () => {
+  if (!form.name && !form.idNumber) return
+  dismissedDuplicate.value = false
+  try {
+    const res = await api.customer.checkDuplicate({
+      name: form.name || undefined,
+      idNumber: form.idNumber || undefined,
+      idType: form.idType || undefined,
+      excludeId: null
+    })
+    if (res.code === 200 && res.data?.length > 0) {
+      duplicateList.value = res.data
+      showDuplicateWarning.value = true
+    } else {
+      duplicateList.value = []
+      showDuplicateWarning.value = false
+    }
+  } catch {
+    duplicateList.value = []
+    showDuplicateWarning.value = false
+  }
+}
+
+const onIdNumberBlur = () => {
+  checkIdNumberUnique()
+  checkDuplicate()
+}
+
+const formatSimilarity = (val) => {
+  if (val == null) return ''
+  return val > 1 ? val + '%' : (val * 100).toFixed(0) + '%'
+}
+
+const loadTags = async () => {
+  try {
+    const res = await api.customer.getTagList()
+    if (res.code === 200) {
+      tagList.value = res.data || []
+    }
+  } catch {}
+}
+
+onMounted(() => {
+  loadTags()
+})
+
 const beforeUpload = (file) => {
   const isImage = file.type.startsWith('image/')
   const isLt5M = file.size / 1024 / 1024 < 5
@@ -502,6 +593,12 @@ const handleSave = async () => {
     }
     const res = await api.customer.add(payload)
     if (res.code === 200) {
+      const createdId = res.data?.id || res.data
+      if (selectedTagIds.value.length > 0 && createdId) {
+        try {
+          await api.customer.addTagsToCustomer(createdId, selectedTagIds.value)
+        } catch {}
+      }
       ElMessage.success('创建客户成功')
       router.push('/customer/list')
     } else {
@@ -543,6 +640,43 @@ const handleCancel = () => {
 
 .step-bar {
   margin-bottom: 24px;
+}
+
+.duplicate-alert {
+  margin-bottom: 16px;
+}
+
+.duplicate-list {
+  margin-top: 8px;
+}
+
+.duplicate-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid #ebeef5;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.dup-name {
+  font-weight: 600;
+  min-width: 80px;
+}
+
+.dup-phone,
+.dup-id {
+  color: #606266;
+  min-width: 120px;
+}
+
+.dup-score {
+  color: #e6a23c;
+  font-weight: 600;
+  min-width: 80px;
 }
 
 .step-form {

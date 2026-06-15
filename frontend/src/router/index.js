@@ -153,6 +153,36 @@ const routes = [
         name: 'CustomerEdit',
         component: () => import('@/views/customer/CustomerEdit.vue'),
         meta: { title: '编辑客户', icon: 'Edit', permission: 'customer:edit' }
+      },
+      {
+        path: 'customer/tags',
+        name: 'TagManagement',
+        component: () => import('@/views/customer/TagManagement.vue'),
+        meta: { title: '标签管理', icon: 'PriceTag', permission: 'customer:tag:list' }
+      },
+      {
+        path: 'customer/blacklist',
+        name: 'BlacklistManagement',
+        component: () => import('@/views/customer/BlacklistManagement.vue'),
+        meta: { title: '黑名单管理', icon: 'Warning', permission: 'customer:blacklist:list' }
+      },
+      {
+        path: 'customer/blacklistApproval',
+        name: 'BlacklistApproval',
+        component: () => import('@/views/customer/BlacklistApproval.vue'),
+        meta: { title: '黑名单审批', icon: 'Checked', permission: 'customer:blacklist:approve' }
+      },
+      {
+        path: 'customer/merge',
+        name: 'CustomerMerge',
+        component: () => import('@/views/customer/CustomerMerge.vue'),
+        meta: { title: '客户合并', icon: 'CopyDocument', permission: 'customer:merge' }
+      },
+      {
+        path: 'customer/import',
+        name: 'CustomerImport',
+        component: () => import('@/views/customer/CustomerImport.vue'),
+        meta: { title: '批量导入', icon: 'Upload', permission: 'customer:import' }
       }
     ]
   },
